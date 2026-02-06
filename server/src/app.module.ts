@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ConfigModule } from '@nestjs/config';
 import { DragonsModule } from './dragons/dragons.module';
+import { EncountersModule } from './encounters/encounters.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { DragonsModule } from './dragons/dragons.module';
     PrismaModule,
     AuthModule,
     DragonsModule,
+    EncountersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
