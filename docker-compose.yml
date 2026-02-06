@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: drm_db
+    environment:
+      POSTGRES_USER: drm
+      POSTGRES_PASSWORD: drm
+      POSTGRES_DB: drm
+    ports:
+      - "5431:5432"
+
+    volumes:
+      - drm_pg:/var/lib/postgresql/data
+
+volumes:
+  drm_pg:

@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  HUNTER
+}
+
+enum DragonState {
+  ASSIGNED
+  IN_PROGRESS
+  AT_RISK
+  CLOSED
+}
+
+enum EncounterType {
+  NEGOTIATION
+  COMBAT
+  BRIBE
+  OBSERVATION
+}
+
+enum EncounterOutcome {
+  SUCCESS
+  NEUTRAL
+  FAIL
+}
+
+enum DragonOutcome {
+  DOMESTICATED
+  ONE_TIME_DEAL
+  ELIMINATED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(HUNTER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedDragons Dragon[] @relation("DragonOwner")
+  encounters   Encounter[]
+}
+
+model Dragon {
+  id             String        @id @default(uuid())
+  name           String
+  speciesType    String
+  aggression     Int           @default(30) // 0..100
+  state          DragonState   @default(ASSIGNED)
+  ownerHunterId  String?
+  ownerHunter    User?         @relation("DragonOwner", fields: [ownerHunterId], references: [id])
+
+  closedAt       DateTime?
+  outcome        DragonOutcome?
+  outcomeNotes   String?
+
+  lastEncounterAt DateTime?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  encounters     Encounter[]
+
+  @@index([ownerHunterId])
+  @@index([state])
+}
+
+model Encounter {
+  id           String          @id @default(uuid())
+  dragonId     String
+  performedById String
+  type         EncounterType
+  outcome      EncounterOutcome @default(NEUTRAL)
+  notes        String?
+  aggressionDelta Int          @default(0)
+  createdAt    DateTime        @default(now())
+
+  dragon       Dragon          @relation(fields: [dragonId], references: [id])
+  performedBy  User            @relation(fields: [performedById], references: [id])
+
+  @@index([dragonId, createdAt])
+}
