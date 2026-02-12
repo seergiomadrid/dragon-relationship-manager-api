@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { login } from "../api/auth";
 import { OrnatePanel } from "../components/ui/OrnatePanel";
 import { RuneButton } from "../components/ui/RuneButton";
+import { queryClient } from "../app/queryClient";
 
 export function LoginPage() {
     const nav = useNavigate();
@@ -18,6 +19,7 @@ export function LoginPage() {
         setLoading(true);
         try {
             await login(email, password);
+            await queryClient.invalidateQueries({ queryKey: ["me"] });
             nav("/dragons");
         } catch (err: any) {
             setError(err?.response?.data?.message ?? "Login failed");

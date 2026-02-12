@@ -2,8 +2,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
-import { OrnatePanel } from "../components/ui/OrnatePanel";
+import { useMe } from "../app/hooks/useMe";
 import { RuneButton } from "../components/ui/RuneButton";
+import { useHunters } from "../app/hooks/useHunters";
 
 type DragonState = "ASSIGNED" | "IN_PROGRESS" | "AT_RISK" | "CLOSED";
 
@@ -13,57 +14,63 @@ type Dragon = {
     speciesType: string;
     aggression: number;
     state: DragonState;
+    ownerHunterId?: string | null;
 };
 
-function stateMeta(s: DragonState) {
+type Hunter = {
+    id: string;
+    email: string;
+    role: "ADMIN" | "HUNTER";
+};
+
+function stateLabel(s: DragonState) {
     switch (s) {
         case "ASSIGNED":
-            return { label: "Assigned", icon: "⚑", tone: "text-white/80 border-[#f0d28a]/18 bg-black/25" };
+            return "Assigned";
         case "IN_PROGRESS":
-            return { label: "In Progress", icon: "⚔", tone: "text-white/85 border-[#f0d28a]/22 bg-black/25" };
+            return "In progress";
         case "AT_RISK":
-            return { label: "At Risk", icon: "☠", tone: "text-[#f0d28a]/90 border-[#b12d2d]/25 bg-[#b12d2d]/10" };
+            return "At risk";
         case "CLOSED":
-            return { label: "Closed", icon: "⛬", tone: "text-white/70 border-white/10 bg-black/20" };
+            return "Closed";
     }
 }
 
-function AggroBar({ value }: { value: number }) {
-    const v = Math.max(0, Math.min(100, value ?? 0));
-    const danger = v >= 70;
-    const warn = v >= 45 && v < 70;
+function pillTone(state: DragonState) {
+    if (state === "AT_RISK") return "border-[#b12d2d]/25 bg-[#b12d2d]/10 text-[#f0d28a]/95";
+    if (state === "CLOSED") return "border-white/10 bg-black/20 text-white/75";
+    return "border-[#f0d28a]/18 bg-black/25 text-white/90";
+}
 
-    return (
-        <div className="w-full">
-            <div className="flex items-center justify-between text-xs text-white/55">
-                <span className="tracking-[0.22em]">AGGRESSION</span>
-                <span className={danger ? "text-[#f0d28a]" : warn ? "text-white/70" : "text-white/55"}>
-                    {v}/100
-                </span>
-            </div>
-            <div className="mt-2 h-3 rounded-full border border-[#f0d28a]/12 bg-black/30 overflow-hidden">
-                <div
-                    className={[
-                        "h-full rounded-full",
-                        "bg-[linear-gradient(90deg,rgba(240,210,138,0.15),rgba(240,210,138,0.55),rgba(240,122,42,0.50))]",
-                        danger ? "shadow-[0_0_30px_rgba(240,122,42,0.16)]" : "shadow-[0_0_24px_rgba(240,210,138,0.10)]",
-                    ].join(" ")}
-                    style={{ width: `${v}%` }}
-                />
-            </div>
-        </div>
-    );
+function clamp(v: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, v));
 }
 
 export function DragonsPage() {
+    const meQ = useMe();
+    const isAdmin = meQ.data?.role === "ADMIN";
+    const huntersQ = useHunters(isAdmin);
+
     const [items, setItems] = useState<Dragon[]>([]);
     const [loading, setLoading] = useState(true);
     const [err, setErr] = useState<string | null>(null);
 
-    // filtros
+    // filters
     const [q, setQ] = useState("");
     const [state, setState] = useState<DragonState | "ALL">("ALL");
     const [minAggro, setMinAggro] = useState(0);
+
+    // create dragon (ADMIN)
+    const [name, setName] = useState("");
+    const [speciesType, setSpeciesType] = useState("");
+    const [aggression, setAggression] = useState(30);
+    const [creating, setCreating] = useState(false);
+    const [createMsg, setCreateMsg] = useState<string | null>(null);
+
+    // assign dragon (ADMIN)
+    const [selectedHunterByDragon, setSelectedHunterByDragon] = useState<Record<string, string>>({});
+    const [assigningId, setAssigningId] = useState<string | null>(null);
+    const [assignMsg, setAssignMsg] = useState<Record<string, string | null>>({});
 
     async function load() {
         setLoading(true);
@@ -97,70 +104,111 @@ export function DragonsPage() {
         });
     }, [items, q, state, minAggro]);
 
-    const stats = useMemo(() => {
-        const total = items.length;
-        const atRisk = items.filter((d) => d.state === "AT_RISK").length;
-        const inProgress = items.filter((d) => d.state === "IN_PROGRESS").length;
-        const avgAggro =
-            total === 0 ? 0 : Math.round(items.reduce((a, b) => a + (b.aggression ?? 0), 0) / total);
+    async function createDragon() {
+        setCreateMsg(null);
 
-        return { total, atRisk, inProgress, avgAggro };
-    }, [items]);
+        const n = name.trim();
+        const s = speciesType.trim();
+        if (!n || !s) {
+            setCreateMsg("Name and species are required.");
+            return;
+        }
+
+        setCreating(true);
+        try {
+            await api("/dragons", {
+                method: "POST",
+                body: JSON.stringify({
+                    name: n,
+                    speciesType: s,
+                    aggression: clamp(aggression, 0, 100),
+                }),
+            });
+
+            setCreateMsg("A new dragon has been forged into the ledger.");
+            setName("");
+            setSpeciesType("");
+            setAggression(30);
+            await load();
+        } catch (e: any) {
+            setCreateMsg(e?.message ?? "Failed to forge dragon");
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    async function assignDragon(dragonId: string) {
+        const hunterId = selectedHunterByDragon[dragonId];
+        if (!hunterId) {
+            setAssignMsg((m) => ({ ...m, [dragonId]: "Choose a hunter first." }));
+            return;
+        }
+
+        setAssigningId(dragonId);
+        setAssignMsg((m) => ({ ...m, [dragonId]: null }));
+
+        try {
+            await api(`/dragons/${dragonId}/assign`, {
+                method: "PATCH",
+                body: JSON.stringify({ hunterId }),
+            });
+
+            setAssignMsg((m) => ({ ...m, [dragonId]: "Assignment sealed." }));
+            await load();
+        } catch (e: any) {
+            setAssignMsg((m) => ({ ...m, [dragonId]: e?.message ?? "Failed to assign" }));
+        } finally {
+            setAssigningId(null);
+        }
+    }
 
     return (
         <div className="space-y-6">
-            <OrnatePanel
-                title="Dragons Ledger"
-                subtitle="A living archive of threats, bargains, and flames."
-                right={<RuneButton onClick={load}>Refresh</RuneButton>}
-            >
-                {/* Stats row */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-4">
-                        <div className="text-xs tracking-[0.26em] text-white/50">RECORDS</div>
-                        <div className="mt-1 font-cinzel text-2xl text-[#f0d28a]/90">{stats.total}</div>
-                        <div className="mt-1 text-xs text-white/55">Total dragons registered</div>
-                    </div>
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-4">
-                        <div className="text-xs tracking-[0.26em] text-white/50">AT RISK</div>
-                        <div className="mt-1 font-cinzel text-2xl text-[#f0d28a]/90">{stats.atRisk}</div>
-                        <div className="mt-1 text-xs text-white/55">Critical volatility</div>
-                    </div>
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-4">
-                        <div className="text-xs tracking-[0.26em] text-white/50">IN PROGRESS</div>
-                        <div className="mt-1 font-cinzel text-2xl text-[#f0d28a]/90">{stats.inProgress}</div>
-                        <div className="mt-1 text-xs text-white/55">Active operations</div>
-                    </div>
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-4">
-                        <div className="text-xs tracking-[0.26em] text-white/50">AVG AGGRO</div>
-                        <div className="mt-1 font-cinzel text-2xl text-[#f0d28a]/90">{stats.avgAggro}</div>
-                        <div className="mt-1 text-xs text-white/55">Mean aggression</div>
+            {/* HEADER */}
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <div className="text-sm tracking-[0.22em] text-white/55">LEDGER</div>
+                    <h1 className="font-cinzel text-4xl text-[#f0d28a]/95">Dragons Ledger</h1>
+                    <div className="mt-2 text-lg text-white/70">
+                        {filtered.length} of {items.length} records
                     </div>
                 </div>
 
+                <button
+                    onClick={load}
+                    className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-5 py-3 text-base text-white/90 hover:bg-black/35 transition"
+                >
+                    Refresh
+                </button>
+            </div>
+
+            {/* TOP GRID */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 {/* Filters */}
-                <div className="mt-5 rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-4">
+                <div className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
                     <div className="flex items-center justify-between">
-                        <div className="font-cinzel text-sm text-[#f0d28a]/85 tracking-wide">Control Panel</div>
-                        <div className="text-xs text-white/50">{filtered.length} shown</div>
+                        <div className="font-cinzel text-2xl text-[#f0d28a]/90">Scry Filters</div>
+                        <div className="text-base text-white/55">Refine the list</div>
                     </div>
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <div className="space-y-2">
-                            <div className="text-xs tracking-[0.22em] text-white/50">SEARCH</div>
+                    <div className="mt-3 rune-divider" />
+
+                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div className="space-y-2 md:col-span-1">
+                            <div className="text-sm tracking-[0.22em] text-white/55">SEARCH</div>
                             <input
                                 value={q}
                                 onChange={(e) => setQ(e.target.value)}
                                 placeholder="Name or species…"
-                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-sm text-white/90 outline-none focus:border-[#f0d28a]/30 focus:shadow-[0_0_0_4px_rgba(240,210,138,0.07)]"
+                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
                             />
                         </div>
 
-                        <div className="space-y-2">
-                            <div className="text-xs tracking-[0.22em] text-white/50">STATE</div>
+                        <div className="space-y-2 md:col-span-1">
+                            <div className="text-sm tracking-[0.22em] text-white/55">STATE</div>
                             <select
                                 value={state}
                                 onChange={(e) => setState(e.target.value as any)}
-                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-sm text-white/90 outline-none focus:border-[#f0d28a]/30"
+                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
                             >
                                 <option value="ALL">All</option>
                                 <option value="ASSIGNED">Assigned</option>
@@ -170,9 +218,9 @@ export function DragonsPage() {
                             </select>
                         </div>
 
-                        <div className="space-y-2">
-                            <div className="text-xs tracking-[0.22em] text-white/50">
-                                MIN AGGRESSION: <span className="text-[#f0d28a]/80">{minAggro}</span>
+                        <div className="space-y-2 md:col-span-1">
+                            <div className="text-sm tracking-[0.22em] text-white/55">
+                                MIN AGGRESSION: <span className="text-white/80">{minAggro}</span>
                             </div>
                             <input
                                 type="range"
@@ -180,93 +228,199 @@ export function DragonsPage() {
                                 max={100}
                                 value={minAggro}
                                 onChange={(e) => setMinAggro(Number(e.target.value))}
-                                className="w-full accent-[#f0d28a]"
+                                className="w-full"
                             />
+                            <div className="text-sm text-white/55">Pull right to hunt only the truly volatile.</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Content */}
-                <div className="mt-5 space-y-3">
-                    {loading ? (
-                        <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-sm text-white/70">
-                            Loading ledger…
+                {/* Admin Forge */}
+                <div className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
+                    <div className="flex items-center justify-between">
+                        <div className="font-cinzel text-2xl text-[#f0d28a]/90">Forge Dragon</div>
+                        <div className="text-base text-white/55">
+                            {meQ.isLoading ? "Reading seals…" : meQ.isError ? "Session unknown" : isAdmin ? "ADMIN" : "Restricted"}
                         </div>
-                    ) : err ? (
-                        <div className="rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-6 text-sm text-white/75">
-                            <div className="font-cinzel text-[#f0d28a]/90">Could not load dragons</div>
-                            <div className="mt-2 text-white/65">{err}</div>
+                    </div>
+                    <div className="mt-3 rune-divider" />
+
+                    {meQ.isLoading ? (
+                        <div className="mt-4 rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-lg text-white/75">
+                            Reading your guild seal…
+                        </div>
+                    ) : meQ.isError ? (
+                        <div className="mt-4 rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-4 text-lg text-white/85">
+                            Could not verify session (GET /auth/me). Is the server updated?
+                        </div>
+                    ) : !isAdmin ? (
+                        <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-lg text-white/75">
+                            Only <span className="text-[#f0d28a]/90 font-semibold">ADMIN</span> may forge new dragons.
+                            <div className="mt-2 text-base text-white/60">(Log in as admin to unlock this panel.)</div>
                         </div>
                     ) : (
-                        <>
-                            {filtered.map((d) => {
-                                const meta = stateMeta(d.state);
-                                return (
-                                    <div
-                                        key={d.id}
-                                        className={[
-                                            "rounded-[26px] border border-[#f0d28a]/12 bg-black/25",
-                                            "p-5 shadow-[0_12px_45px_rgba(0,0,0,0.45)]",
-                                            "hover:shadow-[0_18px_65px_rgba(0,0,0,0.55)] transition",
-                                        ].join(" ")}
-                                    >
-                                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                                            <div className="min-w-0">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <div className="font-cinzel text-xl text-[#f0d28a]/95 tracking-wide">
-                                                        {d.name}
-                                                    </div>
+                        <div className="mt-4 space-y-4">
+                            <div className="space-y-2">
+                                <div className="text-sm tracking-[0.22em] text-white/55">NAME</div>
+                                <input
+                                    value={name}
+                                    onChange={(e) => setName(e.target.value)}
+                                    placeholder="e.g., Vyrnax the Cinder"
+                                    className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
+                                />
+                            </div>
 
-                                                    <span
-                                                        className={[
-                                                            "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs",
-                                                            "border",
-                                                            meta.tone,
-                                                        ].join(" ")}
-                                                    >
-                                                        <span className="opacity-80">{meta.icon}</span>
-                                                        <span className="tracking-wide">{meta.label}</span>
-                                                    </span>
-                                                </div>
+                            <div className="space-y-2">
+                                <div className="text-sm tracking-[0.22em] text-white/55">SPECIES TYPE</div>
+                                <input
+                                    value={speciesType}
+                                    onChange={(e) => setSpeciesType(e.target.value)}
+                                    placeholder="e.g., Ash Drake · Frost Wyrm · Emerald Serpent"
+                                    className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
+                                />
+                            </div>
 
-                                                <div className="mt-1 text-sm text-white/70">
-                                                    Species:{" "}
-                                                    <span className="text-white/90 font-semibold">
-                                                        {d.speciesType}
-                                                    </span>
-                                                </div>
+                            <div className="space-y-2">
+                                <div className="text-sm tracking-[0.22em] text-white/55">
+                                    BASE AGGRESSION: <span className="text-white/85">{aggression}</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min={0}
+                                    max={100}
+                                    value={aggression}
+                                    onChange={(e) => setAggression(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                                <div className="text-sm text-white/55">Start calm… or unleash a catastrophe.</div>
+                            </div>
 
-                                                <div className="mt-2 text-xs text-white/50">
-                                                    Record ID: <span className="text-white/65">{d.id}</span>
-                                                </div>
-                                            </div>
+                            <RuneButton onClick={createDragon} disabled={creating} className="w-full py-3 text-base">
+                                {creating ? "Forging…" : "Forge into Ledger"}
+                            </RuneButton>
 
-                                            <div className="w-full max-w-md">
-                                                <AggroBar value={d.aggression} />
-                                            </div>
-
-                                            <div className="flex justify-end">
-                                                <Link
-                                                    to={`/dragons/${d.id}`}
-                                                    className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-2.5 text-sm text-white/85 hover:bg-black/35 transition shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
-                                                >
-                                                    Open dossier →
-                                                </Link>
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {filtered.length === 0 && (
-                                <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-sm text-white/70">
-                                    No dragons match the current filters.
+                            {createMsg && (
+                                <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-lg text-white/80">
+                                    {createMsg}
                                 </div>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
-            </OrnatePanel>
+            </div>
+
+            {/* LIST */}
+            {loading ? (
+                <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-lg text-white/75">
+                    Loading ledger…
+                </div>
+            ) : err ? (
+                <div className="rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-6 text-lg text-white/85">
+                    <div className="font-cinzel text-[#f0d28a]/90 text-2xl">Could not load dragons</div>
+                    <div className="mt-2 text-white/70">{err}</div>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {filtered.map((d) => (
+                        <div key={d.id} className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
+                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <div className="font-cinzel text-2xl text-[#f0d28a]/95">{d.name}</div>
+
+                                        <span className={["inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm border", pillTone(d.state)].join(" ")}>
+                                            <span className="opacity-80">⛬</span>
+                                            <span className="tracking-wide">{stateLabel(d.state)}</span>
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-2 text-lg text-white/75">
+                                        Species: <span className="text-white/90 font-semibold">{d.speciesType}</span>
+                                    </div>
+
+                                    <div className="mt-1 text-base text-white/55">
+                                        Aggression: <span className="text-white/80">{d.aggression}/100</span>
+                                        {d.ownerHunterId ? <>{" · "}Assigned</> : <>{" · "}Unassigned</>}
+                                    </div>
+
+                                    {/* ADMIN: assign / reassign */}
+                                    {isAdmin && (
+                                        <div className="mt-4 rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4">
+                                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                                <div className="text-base text-white/75">
+                                                    {d.ownerHunterId ? (
+                                                        <>
+                                                            Assigned to: <span className="text-white/90 font-semibold">{d.ownerHunterId}</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            Status: <span className="text-white/90 font-semibold">Unassigned</span>
+                                                        </>
+                                                    )}
+                                                    <div className="text-sm text-white/55">Select a hunter and seal the order.</div>
+                                                </div>
+
+                                                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                                                    <select
+                                                        value={selectedHunterByDragon[d.id] ?? ""}
+                                                        onChange={(e) =>
+                                                            setSelectedHunterByDragon((prev) => ({
+                                                                ...prev,
+                                                                [d.id]: e.target.value,
+                                                            }))
+                                                        }
+                                                        className="w-full md:w-[320px] rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
+                                                        disabled={huntersQ.isLoading || huntersQ.isError}
+                                                    >
+                                                        <option value="" disabled>
+                                                            {huntersQ.isLoading ? "Summoning hunters…" : huntersQ.isError ? "Hunters unavailable" : "Choose a hunter…"}
+                                                        </option>
+
+                                                        {(huntersQ.data as Hunter[] | undefined ?? []).map((u) => (
+                                                            <option key={u.id} value={u.id}>
+                                                                {u.email} — {u.id.slice(0, 8)}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+
+                                                    <button
+                                                        onClick={() => assignDragon(d.id)}
+                                                        disabled={assigningId === d.id || huntersQ.isLoading || huntersQ.isError}
+                                                        className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-5 py-3 text-base text-white/90 hover:bg-black/35 transition disabled:opacity-50"
+                                                    >
+                                                        {assigningId === d.id ? "Sealing…" : d.ownerHunterId ? "Reassign" : "Assign"}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {assignMsg[d.id] && (
+                                                <div className="mt-3 rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-3 text-base text-white/80">
+                                                    {assignMsg[d.id]}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end">
+                                    <Link
+                                        to={`/dragons/${d.id}`}
+                                        className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-5 py-3 text-base text-white/90 hover:bg-black/35 transition"
+                                    >
+                                        Open dossier →
+                                    </Link>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+
+                    {filtered.length === 0 && (
+                        <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-lg text-white/75">
+                            No dragons match the current filters.
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

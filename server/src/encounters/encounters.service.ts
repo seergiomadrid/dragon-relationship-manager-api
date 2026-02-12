@@ -45,12 +45,18 @@ export class EncountersService {
   }) {
     const dragon = await this.prisma.dragon.findUnique({
       where: { id: params.dragonId },
+      select: {
+        id: true,
+        aggression: true,
+        state: true,
+        ownerHunterId: true,
+      },
     });
+
     if (!dragon) throw new NotFoundException('Dragon not found');
     if (dragon.state === 'CLOSED')
       throw new ForbiddenException('Dragon is closed');
 
-    // HUNTER solo puede tocar sus dragones
     if (
       params.performedByRole === Role.HUNTER &&
       dragon.ownerHunterId !== params.performedById
@@ -60,8 +66,11 @@ export class EncountersService {
 
     const delta = deltaFromType(params.type);
     const newAggression = clampAggression(dragon.aggression + delta);
-    const newState: DragonState =
-      newAggression >= 70 ? 'AT_RISK' : 'IN_PROGRESS';
+
+    const baseState: DragonState = dragon.ownerHunterId
+      ? 'IN_PROGRESS'
+      : 'ASSIGNED';
+    const newState: DragonState = newAggression >= 70 ? 'AT_RISK' : baseState;
 
     return this.prisma.$transaction(async (tx) => {
       const encounter = await tx.encounter.create({

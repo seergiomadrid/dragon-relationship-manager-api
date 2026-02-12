@@ -84,10 +84,11 @@ export class DragonsService {
       data: {
         ownerHunterId: hunterId,
         state: 'IN_PROGRESS',
-        lastEncounterAt: new Date(),
+        // lastEncounterAt: NO aquí
       },
     });
   }
+
   async closeDragon(params: {
     dragonId: string;
     userId: string;
@@ -103,7 +104,7 @@ export class DragonsService {
     if (dragon.state === 'CLOSED')
       throw new ForbiddenException('Already closed');
 
-    if (params.role === 'HUNTER' && dragon.ownerHunterId !== params.userId) {
+    if (params.role === Role.HUNTER && dragon.ownerHunterId !== params.userId) {
       throw new ForbiddenException('Not your dragon');
     }
 

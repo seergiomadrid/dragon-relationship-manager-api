@@ -8,8 +8,6 @@ import { RuneButton } from "../components/ui/RuneButton";
 type DragonState = "ASSIGNED" | "IN_PROGRESS" | "AT_RISK" | "CLOSED";
 type EncounterType = "NEGOTIATION" | "COMBAT" | "BRIBE" | "OBSERVATION";
 type EncounterOutcome = "SUCCESS" | "NEUTRAL" | "FAIL";
-
-// Ajusta si tu enum de Prisma tiene otros valores
 type DragonOutcome = "DOMESTICATED" | "ONE_TIME_DEAL" | "ELIMINATED";
 
 type Dragon = {
@@ -19,7 +17,11 @@ type Dragon = {
     aggression: number;
     state: DragonState;
     ownerHunterId?: string | null;
+
+    closedAt?: string | null;
     outcome?: DragonOutcome | null;
+    outcomeNotes?: string | null;
+
     lastEncounterAt?: string | null;
 };
 
@@ -34,16 +36,21 @@ type Encounter = {
     createdAt: string; // ISO
 };
 
+type CreateEncounterResponse = {
+    encounter: Encounter;
+    updatedDragon: Dragon;
+};
+
 function pillTone(state: DragonState) {
     if (state === "AT_RISK") return "border-[#b12d2d]/25 bg-[#b12d2d]/10 text-[#f0d28a]/95";
-    if (state === "CLOSED") return "border-white/10 bg-black/20 text-white/70";
-    return "border-[#f0d28a]/18 bg-black/25 text-white/85";
+    if (state === "CLOSED") return "border-white/10 bg-black/20 text-white/75";
+    return "border-[#f0d28a]/18 bg-black/25 text-white/90";
 }
 
 function outcomeTone(o: EncounterOutcome) {
     if (o === "SUCCESS") return "border-[#f0d28a]/18 bg-black/25 text-[#f0d28a]/95";
     if (o === "FAIL") return "border-[#b12d2d]/25 bg-[#b12d2d]/10 text-[#f0d28a]/95";
-    return "border-white/10 bg-black/20 text-white/80";
+    return "border-white/10 bg-black/20 text-white/85";
 }
 
 function encounterIcon(t: EncounterType) {
@@ -56,6 +63,17 @@ function encounterIcon(t: EncounterType) {
             return "⛁";
         case "OBSERVATION":
             return "👁";
+    }
+}
+
+function outcomeLabel(o: DragonOutcome) {
+    switch (o) {
+        case "DOMESTICATED":
+            return "Domesticated";
+        case "ONE_TIME_DEAL":
+            return "One-Time Deal";
+        case "ELIMINATED":
+            return "Eliminated";
     }
 }
 
@@ -82,7 +100,7 @@ function DeltaBadge({ delta }: { delta?: number | null }) {
             ? "border-[#b12d2d]/25 bg-[#b12d2d]/10 text-[#f0d28a]/95"
             : v < 0
                 ? "border-[#f0d28a]/18 bg-black/25 text-[#f0d28a]/95"
-                : "border-white/10 bg-black/20 text-white/80";
+                : "border-white/10 bg-black/20 text-white/85";
 
     return (
         <span className={["inline-flex items-center rounded-full border px-3 py-1.5 text-sm", tone].join(" ")}>
@@ -126,8 +144,8 @@ export function DragonDossierPage() {
         try {
             const d = await api<Dragon>(`/dragons/${dragonId}`);
             setDragon(d);
-            // Si ya viene outcome, sincroniza el selector (para UI consistente)
             if (d?.outcome) setCloseOutcome(d.outcome);
+            if (d?.outcomeNotes) setCloseNotes(d.outcomeNotes);
         } catch (e: any) {
             setErr(e?.message ?? "Failed to load dragon dossier");
             setDragon(null);
@@ -162,11 +180,12 @@ export function DragonDossierPage() {
 
     async function createEncounter() {
         if (!dragonId || isClosed) return;
+
         setSaving(true);
         setSaveMsg(null);
 
         try {
-            await api("/encounters", {
+            const res = await api<CreateEncounterResponse>("/encounters", {
                 method: "POST",
                 body: JSON.stringify({
                     dragonId,
@@ -176,9 +195,12 @@ export function DragonDossierPage() {
                 }),
             });
 
+            // UI instantánea (sin recargar)
+            setDragon(res.updatedDragon);
+            setEncounters((prev) => [res.encounter, ...prev]);
+
             setNotes("");
             setSaveMsg("Encounter recorded in the archive.");
-            await refreshAll();
         } catch (e: any) {
             setSaveMsg(e?.message ?? "Failed to record encounter");
         } finally {
@@ -188,6 +210,7 @@ export function DragonDossierPage() {
 
     async function closeDragon() {
         if (!dragonId || isClosed) return;
+
         setClosing(true);
         setCloseMsg(null);
 
@@ -201,6 +224,7 @@ export function DragonDossierPage() {
             });
 
             setCloseMsg("Fate sealed. The dossier is now closed.");
+            // Aquí sí recargamos (cambia todo el estado/metadata)
             await refreshAll();
         } catch (e: any) {
             setCloseMsg(e?.message ?? "Failed to close dragon");
@@ -218,7 +242,7 @@ export function DragonDossierPage() {
                     <div className="flex items-center gap-3">
                         <Link
                             to="/dragons"
-                            className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/85 hover:bg-black/35 transition"
+                            className="rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-5 py-3 text-base text-white/90 hover:bg-black/35 transition"
                         >
                             ← Back to ledger
                         </Link>
@@ -229,17 +253,17 @@ export function DragonDossierPage() {
                 }
             >
                 {loading ? (
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-base text-white/75">
+                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-lg text-white/75">
                         Unsealing dossier…
                     </div>
                 ) : err ? (
-                    <div className="rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-6 text-base text-white/80">
-                        <div className="font-cinzel text-[#f0d28a]/90 text-xl">Could not load dossier</div>
-                        <div className="mt-2 text-white/70">{err}</div>
+                    <div className="rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-6 text-base text-white/85">
+                        <div className="font-cinzel text-[#f0d28a]/90 text-2xl">Could not load dossier</div>
+                        <div className="mt-2 text-white/70 text-lg">{err}</div>
                     </div>
                 ) : !dragon ? (
-                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-base text-white/75">
-                        No dragon found with ID <span className="text-white/85">{dragonId}</span>.
+                    <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/25 p-6 text-lg text-white/75">
+                        No dragon found with ID <span className="text-white/90">{dragonId}</span>.
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.2fr_0.8fr]">
@@ -252,9 +276,9 @@ export function DragonDossierPage() {
                                             {dragon.name}
                                         </div>
 
-                                        <div className="mt-2 text-lg text-white/75">
+                                        <div className="mt-2 text-lg text-white/80">
                                             Species:{" "}
-                                            <span className="text-white/92 font-semibold">{dragon.speciesType}</span>
+                                            <span className="text-white/95 font-semibold">{dragon.speciesType}</span>
                                         </div>
 
                                         <div className="mt-2 text-sm text-white/55">
@@ -268,10 +292,12 @@ export function DragonDossierPage() {
                                             </div>
                                         )}
 
-                                        {isClosed && dragon.outcome && (
-                                            <div className="mt-3 text-base text-white/75">
+                                        {isClosed && (
+                                            <div className="mt-3 text-lg text-white/80">
                                                 Outcome:{" "}
-                                                <span className="text-[#f0d28a]/90 font-semibold">{dragon.outcome}</span>
+                                                <span className="text-[#f0d28a]/95 font-semibold">
+                                                    {dragon.outcome ? outcomeLabel(dragon.outcome) : "—"}
+                                                </span>
                                             </div>
                                         )}
                                     </div>
@@ -287,7 +313,7 @@ export function DragonDossierPage() {
                                             <span className="tracking-wide">{dragon.state}</span>
                                         </span>
 
-                                        <span className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm border border-[#f0d28a]/12 bg-black/20 text-white/80">
+                                        <span className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm border border-[#f0d28a]/12 bg-black/20 text-white/85">
                                             <span className="opacity-80">🔥</span>
                                             Aggro {dragon.aggression}/100
                                         </span>
@@ -296,13 +322,13 @@ export function DragonDossierPage() {
 
                                 <div className="mt-5 rune-divider" />
 
-                                <div className="mt-4 text-lg text-white/72 leading-relaxed">
-                                    This dossier is maintained by the Guild. Encounters alter aggression and may
-                                    shift the creature’s state toward fate.
+                                <div className="mt-4 text-lg text-white/75 leading-relaxed">
+                                    Encounters alter aggression and may shift the creature’s state toward fate.
+                                    Keep the chronicle sharp — it guides the Guild.
                                 </div>
 
                                 {isClosed && (
-                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-base text-white/75">
+                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-base text-white/78">
                                         This record is sealed. No further encounters may be inscribed.
                                     </div>
                                 )}
@@ -311,8 +337,8 @@ export function DragonDossierPage() {
                             {/* Timeline */}
                             <div className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
                                 <div className="flex items-center justify-between">
-                                    <div className="font-cinzel text-xl text-[#f0d28a]/90">Encounter Chronicle</div>
-                                    <div className="text-sm text-white/55">
+                                    <div className="font-cinzel text-2xl text-[#f0d28a]/90">Encounter Chronicle</div>
+                                    <div className="text-base text-white/55">
                                         {loadingEnc ? "Fetching…" : `${encounters.length} entries`}
                                     </div>
                                 </div>
@@ -320,16 +346,16 @@ export function DragonDossierPage() {
                                 <div className="mt-3 rune-divider" />
 
                                 {loadingEnc ? (
-                                    <div className="mt-4 rounded-2xl border border-[#f0d28a]/10 bg-black/20 p-4 text-base text-white/75">
+                                    <div className="mt-4 rounded-2xl border border-[#f0d28a]/10 bg-black/20 p-4 text-lg text-white/75">
                                         Summoning the chronicle…
                                     </div>
                                 ) : errEnc ? (
-                                    <div className="mt-4 rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-4 text-base text-white/80">
-                                        <div className="font-cinzel text-[#f0d28a]/90 text-lg">Chronicle unavailable</div>
-                                        <div className="mt-1 text-white/70">{errEnc}</div>
+                                    <div className="mt-4 rounded-2xl border border-[#b12d2d]/20 bg-[#b12d2d]/10 p-4 text-base text-white/85">
+                                        <div className="font-cinzel text-[#f0d28a]/90 text-xl">Chronicle unavailable</div>
+                                        <div className="mt-1 text-white/70 text-lg">{errEnc}</div>
                                     </div>
                                 ) : encounters.length === 0 ? (
-                                    <div className="mt-4 rounded-2xl border border-[#f0d28a]/10 bg-black/20 p-4 text-base text-white/75">
+                                    <div className="mt-4 rounded-2xl border border-[#f0d28a]/10 bg-black/20 p-4 text-lg text-white/75">
                                         No encounters recorded yet. Write the first line of history.
                                     </div>
                                 ) : (
@@ -346,7 +372,7 @@ export function DragonDossierPage() {
 
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            <div className="font-cinzel text-base tracking-wide text-white/92">
+                                                            <div className="font-cinzel text-base tracking-wide text-white/95">
                                                                 {e.type}
                                                             </div>
 
@@ -364,7 +390,7 @@ export function DragonDossierPage() {
                                                         </div>
 
                                                         {e.notes && (
-                                                            <div className="mt-2 text-base text-white/75 leading-relaxed">
+                                                            <div className="mt-2 text-base text-white/78 leading-relaxed">
                                                                 {e.notes}
                                                             </div>
                                                         )}
@@ -389,15 +415,15 @@ export function DragonDossierPage() {
                         <div className="space-y-5">
                             {/* Create encounter */}
                             <div className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
-                                <div className="font-cinzel text-xl text-[#f0d28a]/90">Record an Encounter</div>
-                                <div className="mt-2 text-base text-white/70">
-                                    Posts to <span className="text-white/85">POST /encounters</span>.
+                                <div className="font-cinzel text-2xl text-[#f0d28a]/90">Record an Encounter</div>
+                                <div className="mt-2 text-lg text-white/70">
+                                    Posts to <span className="text-white/90">POST /encounters</span>.
                                 </div>
 
                                 <div className="mt-3 rune-divider" />
 
                                 {isClosed ? (
-                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-base text-white/75">
+                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-lg text-white/75">
                                         The ledger is sealed. Encounters can no longer be added.
                                     </div>
                                 ) : (
@@ -407,7 +433,7 @@ export function DragonDossierPage() {
                                             <select
                                                 value={type}
                                                 onChange={(ev) => setType(ev.target.value as EncounterType)}
-                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/92 outline-none focus:border-[#f0d28a]/30"
+                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
                                             >
                                                 <option value="NEGOTIATION">NEGOTIATION</option>
                                                 <option value="COMBAT">COMBAT</option>
@@ -421,7 +447,7 @@ export function DragonDossierPage() {
                                             <select
                                                 value={encOutcome}
                                                 onChange={(ev) => setEncOutcome(ev.target.value as EncounterOutcome)}
-                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/92 outline-none focus:border-[#f0d28a]/30"
+                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
                                             >
                                                 <option value="SUCCESS">SUCCESS</option>
                                                 <option value="NEUTRAL">NEUTRAL</option>
@@ -434,7 +460,7 @@ export function DragonDossierPage() {
                                             <textarea
                                                 value={notes}
                                                 onChange={(ev) => setNotes(ev.target.value)}
-                                                className="min-h-[130px] w-full resize-none rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/92 outline-none focus:border-[#f0d28a]/30 focus:shadow-[0_0_0_4px_rgba(240,210,138,0.07)]"
+                                                className="min-h-[140px] w-full resize-none rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30 focus:shadow-[0_0_0_4px_rgba(240,210,138,0.07)]"
                                                 placeholder="Write as a guild logbook…"
                                             />
                                             <div className="text-sm text-white/50">Max 500 chars recommended.</div>
@@ -445,7 +471,7 @@ export function DragonDossierPage() {
                                         </RuneButton>
 
                                         {saveMsg && (
-                                            <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-base text-white/78">
+                                            <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-lg text-white/80">
                                                 {saveMsg}
                                             </div>
                                         )}
@@ -455,20 +481,25 @@ export function DragonDossierPage() {
 
                             {/* Close dragon */}
                             <div className="rounded-[26px] border border-[#f0d28a]/12 bg-black/25 p-5">
-                                <div className="font-cinzel text-xl text-[#f0d28a]/90">Seal the Fate</div>
-                                <div className="mt-2 text-base text-white/70">
-                                    Posts to <span className="text-white/85">PATCH /dragons/:id/close</span>.
+                                <div className="font-cinzel text-2xl text-[#f0d28a]/90">Seal the Fate</div>
+                                <div className="mt-2 text-lg text-white/70">
+                                    Posts to <span className="text-white/90">PATCH /dragons/:id/close</span>.
                                 </div>
 
                                 <div className="mt-3 rune-divider" />
 
                                 {isClosed ? (
-                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-base text-white/75">
-                                        This dragon is already sealed as{" "}
-                                        <span className="text-[#f0d28a]/90 font-semibold">
-                                            {dragon.outcome ?? "UNKNOWN"}
+                                    <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-lg text-white/78">
+                                        This dragon is sealed as{" "}
+                                        <span className="text-[#f0d28a]/95 font-semibold">
+                                            {dragon.outcome ? outcomeLabel(dragon.outcome) : "—"}
                                         </span>
                                         .
+                                        {dragon.outcomeNotes && (
+                                            <div className="mt-3 text-base text-white/75 leading-relaxed">
+                                                {dragon.outcomeNotes}
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="mt-4 space-y-4">
@@ -477,10 +508,10 @@ export function DragonDossierPage() {
                                             <select
                                                 value={closeOutcome}
                                                 onChange={(ev) => setCloseOutcome(ev.target.value as DragonOutcome)}
-                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/92 outline-none focus:border-[#f0d28a]/30"
+                                                className="w-full rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30"
                                             >
                                                 <option value="DOMESTICATED">DOMESTICATED</option>
-                                                <option value="ONE_TIME_DEAL">ONE_TIME_DEAL</option>
+                                                <option value="ONE_TIME_DEAL">ONE_TIME DEAL</option>
                                                 <option value="ELIMINATED">ELIMINATED</option>
                                             </select>
                                         </div>
@@ -490,25 +521,19 @@ export function DragonDossierPage() {
                                             <textarea
                                                 value={closeNotes}
                                                 onChange={(ev) => setCloseNotes(ev.target.value)}
-                                                className="min-h-[120px] w-full resize-none rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-base text-white/92 outline-none focus:border-[#f0d28a]/30 focus:shadow-[0_0_0_4px_rgba(240,210,138,0.07)]"
+                                                className="min-h-[130px] w-full resize-none rounded-2xl border border-[#f0d28a]/15 bg-black/25 px-4 py-3 text-lg text-white/95 outline-none focus:border-[#f0d28a]/30 focus:shadow-[0_0_0_4px_rgba(240,210,138,0.07)]"
                                                 placeholder="Final guild statement… (max 500)"
                                                 maxLength={500}
                                             />
-                                            <div className="text-sm text-white/50">
-                                                {closeNotes.length}/500
-                                            </div>
+                                            <div className="text-sm text-white/50">{closeNotes.length}/500</div>
                                         </div>
 
-                                        <RuneButton
-                                            disabled={closing}
-                                            onClick={closeDragon}
-                                            className="w-full py-3 text-base"
-                                        >
+                                        <RuneButton disabled={closing} onClick={closeDragon} className="w-full py-3 text-base">
                                             {closing ? "Sealing…" : "Close Dragon"}
                                         </RuneButton>
 
                                         {closeMsg && (
-                                            <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-base text-white/78">
+                                            <div className="rounded-2xl border border-[#f0d28a]/12 bg-black/20 p-4 text-lg text-white/80">
                                                 {closeMsg}
                                             </div>
                                         )}
