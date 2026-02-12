@@ -1,4 +1,10 @@
-import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsEnum,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Role } from '@prisma/client';
 
 export class RegisterDto {
@@ -6,11 +12,15 @@ export class RegisterDto {
   email: string;
 
   @IsString()
+  @MinLength(3)
+  @MaxLength(24)
+  displayName: string;
+
+  @IsString()
   @MinLength(6)
+  @MaxLength(64)
   password: string;
 
-  // Para dev/MVP: permitimos elegir rol.
-  // En producción normalmente esto lo decide ADMIN.
   @IsEnum(Role)
   role: Role;
 }

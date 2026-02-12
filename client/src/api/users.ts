@@ -4,6 +4,7 @@ export type UserLite = {
   id: string;
   email: string;
   role: "ADMIN" | "HUNTER";
+  displayName: string;
 };
 
 export async function getHunters() {

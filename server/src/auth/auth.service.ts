@@ -15,15 +15,26 @@ export class AuthService {
     private jwt: JwtService,
   ) {}
 
-  async register(email: string, password: string, role: Role) {
+  async register(
+    email: string,
+    password: string,
+    role: Role,
+    displayName: string,
+  ) {
     const exists = await this.prisma.user.findUnique({ where: { email } });
     if (exists) throw new BadRequestException('Email already registered');
 
     const passwordHash = await bcrypt.hash(password, 10);
 
     const user = await this.prisma.user.create({
-      data: { email, passwordHash, role },
-      select: { id: true, email: true, role: true, createdAt: true },
+      data: { email, displayName, passwordHash, role },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        role: true,
+        createdAt: true,
+      },
     });
 
     return user;
@@ -36,7 +47,12 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      displayName: user.displayName,
+    };
     const accessToken = await this.jwt.signAsync(payload);
 
     return { accessToken };

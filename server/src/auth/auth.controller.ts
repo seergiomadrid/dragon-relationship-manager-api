@@ -13,13 +13,18 @@ export class AuthController {
 
   @Post('register')
   register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto.email, dto.password, dto.role);
+    return this.auth.register(
+      dto.email,
+      dto.password,
+      dto.role,
+      dto.displayName,
+    );
   }
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: JwtPayload) {
-    return { id: user.sub, email: user.email, role: user.role };
+    return { id: user.sub, role: user.role, displayName: user.displayName };
   }
 
   @Post('login')

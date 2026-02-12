@@ -40,6 +40,7 @@ enum DragonOutcome {
 model User {
   id           String   @id @default(uuid())
   email        String   @unique
+  displayName  String   @default("")
   passwordHash String
   role         Role     @default(HUNTER)
   createdAt    DateTime @default(now())
@@ -48,6 +49,7 @@ model User {
   ownedDragons Dragon[] @relation("DragonOwner")
   encounters   Encounter[]
 }
+
 
 model Dragon {
   id             String        @id @default(uuid())

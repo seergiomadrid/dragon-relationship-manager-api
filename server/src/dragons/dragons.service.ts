@@ -33,6 +33,16 @@ export class DragonsService {
     return dragon;
   }
 
+  async unassignDragon(dragonId: string) {
+    return this.prisma.dragon.update({
+      where: { id: dragonId },
+      data: {
+        ownerHunterId: null,
+        state: 'ASSIGNED',
+      },
+    });
+  }
+
   async getEncountersForDragon(params: {
     dragonId: string;
     userId: string;
@@ -79,6 +89,14 @@ export class DragonsService {
   }
 
   async assignDragon(dragonId: string, hunterId: string) {
+    const hunter = await this.prisma.user.findUnique({
+      where: { id: hunterId },
+      select: { id: true, role: true },
+    });
+    if (!hunter) throw new NotFoundException('Hunter not found');
+    if (hunter.role !== Role.HUNTER)
+      throw new ForbiddenException('Target user is not a HUNTER');
+
     return await this.prisma.dragon.update({
       where: { id: dragonId },
       data: {

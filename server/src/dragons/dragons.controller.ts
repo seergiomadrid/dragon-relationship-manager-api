@@ -36,6 +36,11 @@ export class DragonsController {
   async getById(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
     return await this.dragons.findById(id, user.sub, user.role);
   }
+  @Patch(':id/unassign')
+  @Roles(Role.ADMIN)
+  unassign(@Param('id') dragonId: string) {
+    return this.dragons.unassignDragon(dragonId);
+  }
 
   @Post()
   @Roles(Role.ADMIN)
