@@ -24,7 +24,48 @@ export class DragonsService {
       orderBy: { createdAt: 'desc' },
     });
   }
+  async findById(id: string, userId: string, role: Role) {
+    const dragon = await this.prisma.dragon.findUnique({ where: { id } });
+    if (!dragon) throw new NotFoundException('Dragon not found');
+    if (role === Role.HUNTER && dragon.ownerHunterId !== userId) {
+      throw new ForbiddenException('You cannot access this dragon dossier');
+    }
+    return dragon;
+  }
 
+  async getEncountersForDragon(params: {
+    dragonId: string;
+    userId: string;
+    role: Role;
+  }) {
+    const { dragonId, userId, role } = params;
+
+    const dragon = await this.prisma.dragon.findUnique({
+      where: { id: dragonId },
+      select: { id: true, ownerHunterId: true },
+    });
+
+    if (!dragon) throw new NotFoundException('Dragon not found');
+
+    if (role === Role.HUNTER && dragon.ownerHunterId !== userId) {
+      throw new ForbiddenException('You cannot access this dragon dossier');
+    }
+
+    return this.prisma.encounter.findMany({
+      where: { dragonId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        dragonId: true,
+        performedById: true,
+        type: true,
+        outcome: true,
+        aggressionDelta: true,
+        notes: true,
+        createdAt: true,
+      },
+    });
+  }
   async create(dto: CreateDragonDto) {
     return await this.prisma.dragon.create({
       data: {

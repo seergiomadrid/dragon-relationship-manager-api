@@ -1,113 +1,117 @@
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Crimson+Text:wght@400;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:wght@400;600;700&display=swap");
+
+/* Tailwind v4: si ya tienes @import "tailwindcss"; mantenlo.
+   Si usas setup distinto, conserva tu setup y pega lo de abajo igualmente. */
 @import "tailwindcss";
 
-/* Full height, no centering global (esto era lo que te rompía layouts) */
-html, body, #root {
+:root {
+  --bg-0: #07070a;
+  --bg-1: #0b0c10;
+  --bg-2: #12131a;
+
+  --ink: #0f0f12;
+  --parch: #f2e3bf;
+  --parch-2: #e9d4a5;
+
+  --gold: #c7a75a;
+  --gold-2: #f0d28a;
+
+  --iron: #2d2f3a;
+  --iron-2: #1a1c24;
+
+  --blood: #b12d2d;
+  --ember: #f07a2a;
+
+  --glow: rgba(240, 210, 138, 0.18);
+  --shadow: rgba(0, 0, 0, 0.65);
+}
+
+html,
+body,
+#root {
   height: 100%;
-  width: 100%;
-  margin: 0;
 }
 
 body {
+  margin: 0;
   font-family: "Crimson Text", serif;
-  background: #0b0b0c;
-  color: #e9e2d0;
+  color: #f3f1ea;
+  background: radial-gradient(1200px 800px at 20% 10%, rgba(195, 131, 70, 0.08), transparent 60%),
+    radial-gradient(1000px 700px at 80% 20%, rgba(120, 90, 210, 0.08), transparent 55%),
+    radial-gradient(1000px 900px at 50% 80%, rgba(240, 122, 42, 0.06), transparent 60%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1));
+  overflow-x: hidden;
 }
 
-/* ========= THEME VARS ========= */
-:root{
-  --ink: #1a1712;
-  --ink-soft: rgba(26,23,18,.75);
-
-  --parchment-1: #f3ecd8;
-  --parchment-2: #e8ddc0;
-
-  --gold: #d8b15b;
-  --gold-soft: rgba(216,177,91,.55);
-
-  --frame: rgba(0,0,0,.55);
-  --shadow: rgba(0,0,0,.55);
-
-  --blue-title: #3b63ff;
+/* Text selection */
+::selection {
+  background: rgba(240, 210, 138, 0.22);
 }
 
-/* ========= BACKGROUND (como “cueva” + niebla) ========= */
-.bg-ancient {
-  background:
-    radial-gradient(1200px 700px at 50% 10%, rgba(255,255,255,0.08), transparent 60%),
-    radial-gradient(900px 600px at 20% 30%, rgba(255,255,255,0.06), transparent 55%),
-    radial-gradient(900px 600px at 80% 40%, rgba(255,255,255,0.05), transparent 55%),
-    radial-gradient(1200px 900px at 50% 90%, rgba(0,0,0,0.65), rgba(0,0,0,0.9)),
-    linear-gradient(180deg, #1a1a1c 0%, #0b0b0c 55%, #070708 100%);
+/* Scrollbar */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
-
-/* ========= GAME-LIKE PANEL ========= */
-.panel {
-  position: relative;
-  background:
-    radial-gradient(900px 300px at 15% 10%, rgba(255,255,255,.35), transparent 60%),
-    linear-gradient(180deg, var(--parchment-1), var(--parchment-2));
-  color: var(--ink);
-  border-radius: 18px;
-  box-shadow:
-    0 18px 55px var(--shadow),
-    inset 0 1px 0 rgba(255,255,255,.7),
-    inset 0 -1px 0 rgba(0,0,0,.12);
-  border: 1px solid rgba(0,0,0,.18);
-  overflow: hidden;
-}
-
-/* marco decorativo */
-.panel::before{
-  content:"";
-  position:absolute;
-  inset:10px;
-  border-radius: 14px;
-  border: 1px solid rgba(0,0,0,.14);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
-  pointer-events:none;
-}
-
-.panel-title {
-  font-family: "Cinzel", serif;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.title-blue {
-  font-family: "Cinzel", serif;
-  color: var(--blue-title);
-  text-shadow: 0 1px 0 rgba(255,255,255,.15);
-}
-
-/* ========= BUTTONS / BADGES ========= */
-.btn-ancient {
-  background: linear-gradient(180deg, #2b2a28, #141313);
-  color: #f0e8d6;
-  border: 1px solid rgba(0,0,0,.55);
-  border-radius: 12px;
-  padding: 10px 14px;
-  box-shadow: 0 10px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
-}
-.btn-ancient:hover { filter: brightness(1.05); }
-
-.pill {
+*::-webkit-scrollbar-thumb {
+  background: rgba(240, 210, 138, 0.18);
+  border: 1px solid rgba(199, 167, 90, 0.22);
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
-  border: 1px solid rgba(0,0,0,.18);
-  background: rgba(255,255,255,.28);
-  color: rgba(26,23,18,.75);
+}
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
 }
 
-/* ========= LAYOUT CONTAINER ========= */
-.app-shell {
-  min-height: 100%;
-  width: 100%;
+/* Utility-ish helpers */
+.font-cinzel {
+  font-family: "Cinzel", serif;
+}
+.text-gold {
+  color: var(--gold-2);
 }
 
-.container-max {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 28px 22px;
+/* “Noise” overlay */
+.noise:before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+/* Subtle vignette */
+.vignette:after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(0, 0, 0, 0.65) 85%);
+}
+
+/* Decorative divider */
+.rune-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(240, 210, 138, 0.25),
+    rgba(240, 210, 138, 0.35),
+    rgba(240, 210, 138, 0.25),
+    transparent
+  );
+  position: relative;
+}
+.rune-divider:before,
+.rune-divider:after {
+  content: "✦";
+  position: absolute;
+  top: -11px;
+  color: rgba(240, 210, 138, 0.55);
+  font-size: 14px;
+}
+.rune-divider:before {
+  left: 50%;
+  transform: translateX(-50%);
 }

@@ -28,29 +28,48 @@ export class DragonsController {
   @Get()
   @Roles(Role.ADMIN, Role.HUNTER)
   async getAll(@CurrentUser() user: JwtPayload) {
-    return this.dragons.findAll(user.sub, user.role);
+    return await this.dragons.findAll(user.sub, user.role);
+  }
+
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.HUNTER)
+  async getById(@Param('id') id: string, @CurrentUser() user: JwtPayload) {
+    return await this.dragons.findById(id, user.sub, user.role);
   }
 
   @Post()
   @Roles(Role.ADMIN)
-  create(@Body() dto: CreateDragonDto) {
-    return this.dragons.create(dto);
+  async create(@Body() dto: CreateDragonDto) {
+    return await this.dragons.create(dto);
   }
 
   @Patch(':id/assign')
   @Roles(Role.ADMIN)
-  assign(@Param('id') dragonId: string, @Body() dto: AssignDragonDto) {
-    return this.dragons.assignDragon(dragonId, dto.hunterId);
+  async assign(@Param('id') dragonId: string, @Body() dto: AssignDragonDto) {
+    return await this.dragons.assignDragon(dragonId, dto.hunterId);
+  }
+
+  @Get(':id/encounters')
+  @Roles(Role.ADMIN, Role.HUNTER)
+  async getEncounters(
+    @Param('id') dragonId: string,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return await this.dragons.getEncountersForDragon({
+      dragonId,
+      userId: user.sub,
+      role: user.role,
+    });
   }
 
   @Patch(':id/close')
   @Roles(Role.ADMIN, Role.HUNTER)
-  close(
+  async close(
     @Param('id') dragonId: string,
     @Body() dto: CloseDragonDto,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.dragons.closeDragon({
+    return await this.dragons.closeDragon({
       dragonId,
       outcome: dto.outcome,
       notes: dto.notes,
